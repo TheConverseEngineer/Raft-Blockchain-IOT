@@ -12,9 +12,26 @@ struct Entry {
     int term;
 };
 
+/** Represents a 42bit MAC address: a(32-bit) b(16-bit)*/
+struct MACAddress {
+    uint32_t a;
+    uint16_t b;
+
+    /** Shorthand for convenience */
+    MACAddress(uint8_t _a, uint8_t _b, uint8_t _c, uint8_t _d, uint8_t _e, uint8_t _f) : 
+        a((((uint32_t)_a)<<24) + (((uint32_t)_b)<<16) + (((uint32_t)_c)<<8) + (uint32_t)_d), 
+        b(((uint16_t)_e<<8) + (uint16_t)_f) {}
+
+    bool operator==(const MACAddress& other) {
+        return a==other.a and b==other.b;
+    } 
+
+    bool isNull() { return a==0 and b==0; }
+};
+
 struct AppendEntryRequest {
     int term;                       // Term of the leader that send this request
-    int leaderID;                   // The current leader
+    MACAddress leaderID;            // The current leader
     int prevLogIndex;               // The index of the last log before these new ones
     int prevLogTerm;                // The term of the last log before these new ones
     std::vector<Entry> entries;     // List of entries to append
@@ -22,14 +39,14 @@ struct AppendEntryRequest {
 };
 
 struct AppendEntryResponse {
-    int term;       // This node's term
-    int senderID;   // The sender's id
-    bool success;   // True if this node's blockchain matches the leader's
+    int term;               // This node's term
+    MACAddress senderID;    // The sender's id
+    bool success;           // True if this node's blockchain matches the leader's
 };
 
 struct RequestVoteRequest {
     int term;                       // Term of the candidate that sent this request
-    int candidateID;                // The candidate that requested this vote
+    MACAddress candidateID;         // The candidate that requested this vote
     int LastLogIndex;               // Index of the candidate's last log entry
     int lastLogTerm;                // Term of the candidate's last log entry
 };
@@ -42,12 +59,12 @@ struct RequestVoteResponse {
 /** Represents a RAFT Node */
 class RaftServer {
     private:
-        int m_serverID;
-        std::vector<int> m_otherServers;
+        MACAddress m_serverID;
+        std::vector<MACAddress> m_otherServers;
 
         int m_currentTerm;
-        int m_votedFor;         // -1 refer to not voted
-        int m_lastKnownLeader; 
+        MACAddress m_votedFor;         // For the purpose of this program, it is assumed that a MAC address of 00:00:00:00:00:00 is null
+        MACAddress m_lastKnownLeader; 
         int m_votesRecieved;
 
         long long m_nextEpoch;        // The time at which the next important thing happens
@@ -83,10 +100,10 @@ class RaftServer {
 
     public:
         // These all do what you think they do
-        void sendMessage(int recipientID, const AppendEntryRequest& msg);
-        void sendMessage(int recipientID, const RequestVoteRequest& msg);
-        void sendMessage(int recipientID, const AppendEntryResponse& msg);
-        void sendMessage(int recipientID, const RequestVoteResponse& msg);
+        virtual void sendMessage(MACAddress recipientID, const AppendEntryRequest& msg);
+        virtual void sendMessage(MACAddress recipientID, const RequestVoteRequest& msg);
+        virtual void sendMessage(MACAddress recipientID, const AppendEntryResponse& msg);
+        virtual void sendMessage(MACAddress recipientID, const RequestVoteResponse& msg);
 
         void addMessage(const AppendEntryRequest& msg);
         void addMessage(const RequestVoteRequest& msg);
@@ -97,7 +114,7 @@ class RaftServer {
             m_log.emplace_back(entry);
         }
 
-        void initialize(long long currentTime, int serverID, const std::vector<int>& otherMembers);
+        void initialize(long long currentTime, MACAddress serverID, const std::vector<MACAddress>& otherMembers);
 
         void update(long long currentTime);
 };

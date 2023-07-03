@@ -40,7 +40,7 @@ void RaftServer::update(long long currentTime) {
             m_nextIndex.clear(); m_matchIndex.clear();
             m_nextIndex.resize(m_otherServers.size(), m_log.size());
             m_matchIndex.resize(m_otherServers.size(), 0);
-            for (int i : m_otherServers) {
+            for (MACAddress i : m_otherServers) {
                 sendMessage(i, AppendEntryRequest{m_currentTerm, m_serverID, (int) m_log.size()-1, (m_log.empty())?0:m_log.back().term, std::vector<Entry>(0), m_commitIndex});
             }
         } else if (currentTime >= m_nextEpoch) startNewCandidateCycle(currentTime);
@@ -95,14 +95,14 @@ void RaftServer::update(long long currentTime) {
     m_requestVoteResponse.clear();
 }
 
-void RaftServer::initialize(long long currentTime, int serverID, const std::vector<int>& otherMembers) {
+void RaftServer::initialize(long long currentTime, MACAddress serverID, const std::vector<MACAddress>& otherMembers) {
     // First, a bunch of variables:
     m_currentTerm = 0;
-    m_votedFor = -1;
+    m_votedFor = MACAddress(0, 0, 0, 0, 0, 0);
     m_log = std::vector<Entry>(0);
     m_commitIndex = -1;
     m_currentState = State::FOLLOWER;
-    m_lastKnownLeader = -1; 
+    m_lastKnownLeader = MACAddress(0, 0, 0, 0, 0, 0); 
     m_serverID = serverID;
 
     m_nextEpoch = currentTime + getElectionTimeout();
@@ -111,7 +111,7 @@ void RaftServer::initialize(long long currentTime, int serverID, const std::vect
 }
 
 void RaftServer::resetToFollower(long long currentTime, int newTerm) {
-    if(newTerm > m_currentTerm) m_votedFor = -1;
+    if(newTerm > m_currentTerm) m_votedFor = MACAddress(0, 0, 0, 0, 0, 0);
 
     m_currentState = State::FOLLOWER;
     m_currentTerm = newTerm;
@@ -126,7 +126,7 @@ void RaftServer::startNewCandidateCycle(long long currentTime) {
     m_votesRecieved = 1;
     m_votedFor = m_serverID;
 
-    for (int i : m_otherServers) {
+    for (MACAddress i : m_otherServers) {
         sendMessage(i, RequestVoteRequest{m_currentTerm, m_serverID, (int)m_log.size()-1, (m_log.empty())?0:m_log.back().term});
     }
 }
@@ -142,7 +142,7 @@ bool RaftServer::doFollowerLogic(const std::vector<AppendEntryRequest>& appendEn
         if (request.term >= m_currentTerm) { // As long as this is a valid leader
             resetTimer = true;
             m_lastKnownLeader = request.leaderID;
-            if (request.term > m_currentTerm) m_votedFor = -1;
+            if (request.term > m_currentTerm) m_votedFor = MACAddress(0, 0, 0, 0, 0, 0);
             m_currentTerm = request.term;
         }
         sendMessage(request.leaderID, respondToAppendRequest(request));
@@ -183,7 +183,7 @@ AppendEntryResponse RaftServer::respondToAppendRequest(const AppendEntryRequest&
 /** Handles all of the response logic found in the RequestVote RPC box in fig. 2 of the RAFT paper */
 RequestVoteResponse RaftServer::respondToVoteRequest(const RequestVoteRequest& rpc) {
     if (rpc.term < m_currentTerm) return {m_currentTerm, false};
-    if ((m_votedFor == -1 or m_votedFor == rpc.candidateID) and isMoreUpToDate(rpc.lastLogTerm, rpc.LastLogIndex)) {
+    if ((m_votedFor.isNull() or m_votedFor == rpc.candidateID) and isMoreUpToDate(rpc.lastLogTerm, rpc.LastLogIndex)) {
         m_votedFor = rpc.candidateID;
         return {m_currentTerm, true};
     } 
