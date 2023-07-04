@@ -1,10 +1,10 @@
 #include <iostream>
 #include "raft.h" 
 
-void RaftServer::update(long long currentTime) {
+void RaftServer::updateRaftServer(long long currentTime) {
     //*************************** FOLLOWER LOGIC ***************************//
     if (m_currentState == State::FOLLOWER) {
-        bool resetTimer = doFollowerLogic(m_appendEntryRequests, m_requestVoteRequests);
+        bool resetTimer = doFollowerLogic();
 
         if (resetTimer) m_nextEpoch = currentTime + getElectionTimeout();
         else if (currentTime >= m_nextEpoch) {
@@ -14,20 +14,23 @@ void RaftServer::update(long long currentTime) {
 
     //*************************** CANDIDATE LOGIC ***************************//
     if (m_currentState == State::CANDIDATE) {
-        for (const AppendEntryRequest& request : m_appendEntryRequests) {
+        while (!m_appendEntryRequests.empty()) {
+            AppendEntryRequest request = m_appendEntryRequests.get();
             if (request.term >= m_currentTerm) {
                 resetToFollower(currentTime, request.term);
                 return; // Exit out of the update and handle other pending entry requests in the next update cycle.
             }
         }
-        for (const RequestVoteRequest& request : m_requestVoteRequests) {
+        while (!m_requestVoteRequests.empty()) {
+            RequestVoteRequest request = m_requestVoteRequests.get();
             if (request.term > m_currentTerm) {
                 resetToFollower(currentTime, request.term);
                 return; // Exit out of the update and handle other pending entry requests in the next update cycle.
             }
         }
 
-        for (const RequestVoteResponse& response : m_requestVoteResponse) {
+        while (!m_requestVoteResponse.empty()) {
+            RequestVoteResponse response = m_requestVoteResponse.get();
             if (response.term == m_currentTerm and response.voteGranted) m_votesRecieved++;
         }
 
@@ -48,19 +51,22 @@ void RaftServer::update(long long currentTime) {
 
     //*************************** LEADER LOGIC ***************************//
     if (m_currentState == State::LEADER) {
-        for (const AppendEntryRequest& request : m_appendEntryRequests) {
+        while(!m_appendEntryRequests.empty()) {
+            AppendEntryRequest request = m_appendEntryRequests.get();
             if (request.term > m_currentTerm) {
                 resetToFollower(currentTime, request.term);
                 return; // Exit out of the update and handle other pending entry requests in the next update cycle.
             }
         }
-        for (const RequestVoteRequest& request : m_requestVoteRequests) {
+        while (!m_requestVoteRequests.empty()) {
+            RequestVoteRequest request = m_requestVoteRequests.get();
             if (request.term > m_currentTerm) {
                 resetToFollower(currentTime, request.term);
                 return; // Exit out of the update and handle other pending entry requests in the next update cycle.
             }
         }
-        for (const AppendEntryResponse& response : m_appendEntryResponses) {
+        while (!m_appendEntryResponses.empty()) {
+            AppendEntryResponse response = m_appendEntryResponses.get();
             int indexInServerList = -1;
             for (int i = 0; i < m_otherServers.size(); i++) { 
                 if (m_otherServers[i] == response.senderID) {
@@ -95,7 +101,7 @@ void RaftServer::update(long long currentTime) {
     m_requestVoteResponse.clear();
 }
 
-void RaftServer::initialize(long long currentTime, MACAddress serverID, const std::vector<MACAddress>& otherMembers) {
+void RaftServer::initializeRaftServer(long long currentTime, MACAddress serverID, const std::vector<MACAddress>& otherMembers) {
     // First, a bunch of variables:
     m_currentTerm = 0;
     m_votedFor = MACAddress(0, 0, 0, 0, 0, 0);
@@ -135,10 +141,11 @@ void RaftServer::startNewCandidateCycle(long long currentTime) {
  * NOTE: This method does NOT handle state transistions
  * 
  *  @return        true if the election timeout should be reset. */
-bool RaftServer::doFollowerLogic(const std::vector<AppendEntryRequest>& appendEntryRPCs, const std::vector<RequestVoteRequest>& voteRequestRPCs) {
+bool RaftServer::doFollowerLogic() {
     bool resetTimer = false;
 
-    for (const AppendEntryRequest& request : appendEntryRPCs) {
+    while (!m_appendEntryRequests.empty()) {
+        AppendEntryRequest request = m_appendEntryRequests.get();
         if (request.term >= m_currentTerm) { // As long as this is a valid leader
             resetTimer = true;
             m_lastKnownLeader = request.leaderID;
@@ -148,7 +155,8 @@ bool RaftServer::doFollowerLogic(const std::vector<AppendEntryRequest>& appendEn
         sendMessage(request.leaderID, respondToAppendRequest(request));
     }
 
-    for (const RequestVoteRequest& request : voteRequestRPCs) {
+    while (!m_requestVoteRequests.empty()) {
+        RequestVoteRequest request = m_requestVoteRequests.get();
         if (request.term > m_currentTerm) m_currentTerm = request.term;
         RequestVoteResponse response = respondToVoteRequest(request);
         if (response.voteGranted) resetTimer = true;
@@ -198,7 +206,7 @@ inline bool RaftServer::isMoreUpToDate(int lastLogTerm, int lastLogIndex) {
 }
 
 /** The next few are just the various message recievers */
-void RaftServer::addMessage(const AppendEntryRequest& msg) { m_appendEntryRequests.emplace_back(msg); }
-void RaftServer::addMessage(const RequestVoteRequest& msg) { m_requestVoteRequests.emplace_back(msg); }
-void RaftServer::addMessage(const AppendEntryResponse& msg) { m_appendEntryResponses.emplace_back(msg); }
-void RaftServer::addMessage(const RequestVoteResponse& msg) { m_requestVoteResponse.emplace_back(msg); }
+void RaftServer::addMessage(const AppendEntryRequest& msg) { m_appendEntryRequests.add(msg); }
+void RaftServer::addMessage(const RequestVoteRequest& msg) { m_requestVoteRequests.add(msg); }
+void RaftServer::addMessage(const AppendEntryResponse& msg) { m_appendEntryResponses.add(msg); }
+void RaftServer::addMessage(const RequestVoteResponse& msg) { m_requestVoteResponse.add(msg); }
