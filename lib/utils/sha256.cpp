@@ -13,21 +13,20 @@ const uint32_t k[64] ={0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25
 
 const inline uint32_t right_rotate(uint32_t n, int d) { return (n>>d)|(n<<(32-d)); }
 
-Hash hash_data(const std::string& s) {
+Hash hash_data(const unsigned char *data, std::size_t len) {
     // Construct byte array
-    int s_len = s.length();
-    int x = (56-s_len)%64;
-    int adj_len = s_len + 8 + ((x<0)?(x+64):x);
+    int x = (56-len)%64;
+    int adj_len = len + 8 + ((x<0)?(x+64):x);
     unsigned char bytes[adj_len];
-    std::memcpy(bytes, s.data(), s.length());
+    std::memcpy(bytes, data, len);
 
     // Declare hash values
     uint32_t h[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
 
     // Pad array and add size measure at end
-    if (s_len != adj_len) bytes[s_len] = 128;
-    for (int i = s_len+1; i < adj_len-8; i++) bytes[i] = 0;
-    ll s_len_in_bits = 8ll * s_len;
+    if (len != adj_len) bytes[len] = 128;
+    for (int i = len+1; i < adj_len-8; i++) bytes[i] = 0;
+    ll s_len_in_bits = 8ll * len;
     for (int i = 0; i < 8; i++) bytes[adj_len-1 - i] = ((s_len_in_bits>>(8*i))&255);
     
     for (int chunk = 0; chunk < adj_len/64; chunk++) { // This should loop through chunks at some point.

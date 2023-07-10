@@ -1,12 +1,24 @@
 #include <iostream>
 #include "raft.h" 
 
+
+std::string stateToStr(State state) {
+    switch (state) {
+        case State::FOLLOWER: return "Follower";
+        case State::CANDIDATE: return "Candidate";
+        case State::LEADER: return "Leader";
+        default: return "Unknown";
+    }
+}
+
 void RaftServer::updateRaftServer(long long currentTime) {
     //*************************** FOLLOWER LOGIC ***************************//
     if (m_currentState == State::FOLLOWER) {
         bool resetTimer = doFollowerLogic();
 
-        if (resetTimer) m_nextEpoch = currentTime + getElectionTimeout();
+        if (resetTimer) {
+            m_nextEpoch = currentTime + getElectionTimeout();
+        } 
         else if (currentTime >= m_nextEpoch) {
             startNewCandidateCycle(currentTime);
         }
@@ -92,6 +104,11 @@ void RaftServer::updateRaftServer(long long currentTime) {
         }
 
         if (m_nextEpoch <= currentTime) m_nextEpoch = currentTime + getHeartbeatTimeout();
+
+        // Update the commit index if needed
+        m_commitIndex = newCommitIndex();
+
+
     }
 
     // Auto-clear everything (unless the control loop was exited earlier)
@@ -99,6 +116,19 @@ void RaftServer::updateRaftServer(long long currentTime) {
     m_appendEntryResponses.clear();
     m_requestVoteRequests.clear();
     m_requestVoteResponse.clear();
+}
+
+int RaftServer::newCommitIndex() {
+    int highestWorking = m_commitIndex;
+    // Update the commit index 
+    for (int newCommitIndex = m_commitIndex + 1; newCommitIndex < m_log.size(); newCommitIndex++) {
+        if (m_log[newCommitIndex].term != m_currentTerm) continue;
+        int counter = 0;
+        for (int i : m_matchIndex) if (i >= m_commitIndex) counter++;
+        if (counter*2 <= m_otherServers.size() + 1) break;
+        highestWorking = newCommitIndex;
+    }
+    return highestWorking;
 }
 
 void RaftServer::initializeRaftServer(long long currentTime, MACAddress serverID, const std::vector<MACAddress>& otherMembers) {
@@ -114,6 +144,8 @@ void RaftServer::initializeRaftServer(long long currentTime, MACAddress serverID
     m_nextEpoch = currentTime + getElectionTimeout();
 
     m_otherServers = otherMembers; // Copy server list
+
+    Log::log(m_serverID.print(), "Create server with this many peers", (int)m_otherServers.size());
 }
 
 void RaftServer::resetToFollower(long long currentTime, int newTerm) {
@@ -157,7 +189,10 @@ bool RaftServer::doFollowerLogic() {
 
     while (!m_requestVoteRequests.empty()) {
         RequestVoteRequest request = m_requestVoteRequests.get();
-        if (request.term > m_currentTerm) m_currentTerm = request.term;
+        if (request.term > m_currentTerm) {
+            m_currentTerm = request.term;
+            m_votedFor = MACAddress(0, 0, 0, 0, 0, 0);
+        }
         RequestVoteResponse response = respondToVoteRequest(request);
         if (response.voteGranted) resetTimer = true;
         sendMessage(request.candidateID, response);
@@ -191,7 +226,7 @@ AppendEntryResponse RaftServer::respondToAppendRequest(const AppendEntryRequest&
 /** Handles all of the response logic found in the RequestVote RPC box in fig. 2 of the RAFT paper */
 RequestVoteResponse RaftServer::respondToVoteRequest(const RequestVoteRequest& rpc) {
     if (rpc.term < m_currentTerm) return {m_currentTerm, false};
-    if ((m_votedFor.isNull() or m_votedFor == rpc.candidateID) and isMoreUpToDate(rpc.lastLogTerm, rpc.LastLogIndex)) {
+    if ((m_votedFor.isNull()) and isMoreUpToDate(rpc.lastLogTerm, rpc.LastLogIndex)) {
         m_votedFor = rpc.candidateID;
         return {m_currentTerm, true};
     } 

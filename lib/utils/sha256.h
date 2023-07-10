@@ -1,8 +1,6 @@
 #ifndef SHA256_H
 #define SHA256_H
 
-#include <string>
-
 struct Hash {
     unsigned long long a;
     unsigned long long b;
@@ -10,6 +8,6 @@ struct Hash {
     unsigned long long d;
 };
 
-Hash hash_data(const std::string& s);
+Hash hash_data(const unsigned char *data, std::size_t len);
 
 #endif

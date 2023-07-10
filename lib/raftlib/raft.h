@@ -3,43 +3,27 @@
 
 #include <vector>
 #include <algorithm>
+#include <cstring>
+#include <cstdlib>
 #include "sync_queue.h"
+#include "logcat.h"
+#include "mac.h"
+#include "entry.h"
+#include <random>
+
+#define AP_ENTRY_REQUEST_CODE 0
+#define AP_ENTRY_RESPONSE_CODE 1
+#define RE_VOTE_REQUEST_CODE 2
+#define RE_VOTE_RESPONSE_CODE 3
+
+static thread_local std::mt19937 generator;
 
 enum class State {
     FOLLOWER, CANDIDATE, LEADER
 };
 
-struct Entry {
-    int term;
-};
+std::string stateToStr(State state);
 
-/** Represents a 42bit MAC address: a(32-bit) b(16-bit)*/
-struct MACAddress {
-    uint8_t address[6];
-
-    /** Shorthand for convenience */
-    MACAddress(uint8_t a, uint8_t b, uint8_t c, uint8_t d, uint8_t e, uint8_t f) { 
-        address[0] = a; address[1] = b; address[2] = c; address[3] = d; address[4] = e; address[5] = f;
-    }
-
-    bool operator==(const MACAddress& other) {
-        return address[0] == other.address[0]
-           and address[1] == other.address[1]
-           and address[2] == other.address[2]
-           and address[3] == other.address[3]
-           and address[4] == other.address[4]
-           and address[5] == other.address[5];
-    } 
-
-    bool isNull() { 
-        return address[0] == 0
-           and address[1] == 0
-           and address[2] == 0
-           and address[3] == 0
-           and address[4] == 0
-           and address[5] == 0;
-    }
-};
 
 /** This struct leaves ~228 bytes worth of space for entries */
 struct AppendEntryRequest {
@@ -72,9 +56,6 @@ struct RequestVoteResponse {
 /** Represents a RAFT Node */
 class RaftServer {
     private:
-        MACAddress m_serverID;
-        std::vector<MACAddress> m_otherServers;
-
         int m_currentTerm;
         MACAddress m_votedFor;         // For the purpose of this program, it is assumed that a MAC address of 00:00:00:00:00:00 is null
         MACAddress m_lastKnownLeader; 
@@ -104,18 +85,28 @@ class RaftServer {
         
         void resetToFollower(long long currentTime, int newTerm);
 
-         long long getElectionTimeout();
-        long long getHeartbeatTimeout();
+        long long getElectionTimeout() {
+            std::uniform_int_distribution<int> distribution(200,350);
+            return distribution(generator);
+        }
+
+        long long getHeartbeatTimeout() {return 60LL; };
 
         // These next few are just for the leader
         std::vector<int> m_nextIndex;
         std::vector<int> m_matchIndex;
 
         // These all do what you think they do
-        virtual void sendMessage(MACAddress recipientID, const AppendEntryRequest& msg);
-        virtual void sendMessage(MACAddress recipientID, const RequestVoteRequest& msg);
-        virtual void sendMessage(MACAddress recipientID, const AppendEntryResponse& msg);
-        virtual void sendMessage(MACAddress recipientID, const RequestVoteResponse& msg);
+        void sendMessage(MACAddress recipientID, const AppendEntryRequest& msg);
+        void sendMessage(MACAddress recipientID, const RequestVoteRequest& msg);
+        void sendMessage(MACAddress recipientID, const AppendEntryResponse& msg);
+        void sendMessage(MACAddress recipientID, const RequestVoteResponse& msg);
+
+        int newCommitIndex();
+
+    protected:
+        std::vector<MACAddress> m_otherServers;
+        MACAddress m_serverID;
 
     public:
 
@@ -131,6 +122,12 @@ class RaftServer {
         void initializeRaftServer(long long currentTime, MACAddress serverID, const std::vector<MACAddress>& otherMembers);
 
         void updateRaftServer(long long currentTime);
+
+        State getCurrentState() { return m_currentState; }
+        int getCommitIndex() { return m_commitIndex; }
+        int getLogSize() { return m_log.size(); }
+        int getCurrentTerm() { return m_currentTerm; }
+        Entry getLogEntry(int index) { return m_log[index]; }
 };
 
 #endif
